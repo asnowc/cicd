@@ -11,5 +11,7 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Install
+        run: deno install
       - name: Unit test
         run: deno task test
