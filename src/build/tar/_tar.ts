@@ -6,31 +6,22 @@ import * as path from "@std/path";
  * 符号链接会被转为相对路径
  * Requires `allow-read` permission
  */
-export class TarTransformStream implements TransformStream<string, Uint8Array> {
-  constructor(rootPath: string) {
-    const tarStream = new TarStream();
-    this.readable = tarStream.readable;
+export function createTarInputStream(rootPath: string): TransformStream<string, Uint8Array> {
+  const transform = new TransformStream({
+    async transform(filename, ctrl) {
+      const res = await getFileTarInput(filename, rootPath);
 
-    const w = tarStream.writable.getWriter();
-    this.writable = new WritableStream<string>({
-      async write(filename) {
-        const res = await getFileTarInput(filename, rootPath);
-        if (!res) return;
-        return w.write(res);
-      },
-      close() {
-        return w.close();
-      },
-      abort(r) {
-        return w.abort(r);
-      },
-    });
-  }
-  readonly readable: ReadableStream<Uint8Array>;
-  readonly writable: WritableStream<string>;
+      if (res) ctrl.enqueue(res);
+    },
+  });
+  return {
+    readable: transform.readable.pipeThrough(new TarStream()),
+    writable: transform.writable,
+  };
 }
+
 async function getFileTarInput(filename: string, rootPath: string): Promise<TarStreamInput | undefined> {
-  const f = await Deno.open(filename);
+  const f = await Deno.open(path.join(rootPath, filename));
   let info: Deno.FileInfo;
   try {
     info = await f.stat();

@@ -1,4 +1,4 @@
-import { TarTransformStream } from "./_tar.ts";
+import { createTarInputStream } from "./_tar.ts";
 import { Glob } from "glob";
 
 export type TarOption = {
@@ -9,17 +9,19 @@ export type TarOption = {
   filter?: (filename: string) => string | false;
 };
 /**
- * 创建归档文件
+ * 输入 glob表达式 创建归档文件流
  * @param filesGlob 一个或多个 glob 表达式。
  */
-export async function createTar(filesGlob: string | string[], output: string, option: TarOption = {}): Promise<void> {
+export function createTarStreamByGlob(
+  filesGlob: string | string[],
+  option: TarOption = {},
+): ReadableStream<Uint8Array> {
   const { rootPath = Deno.cwd(), gzip, filter } = option;
-  await using file = await Deno.open(output, { read: false, write: true, create: true });
   const glob = findFilesByGlob(filesGlob, { rootPath });
   let stream = ReadableStream.from(filter ? filterFiles(glob, filter) : glob)
-    .pipeThrough(new TarTransformStream(rootPath));
+    .pipeThrough(createTarInputStream(rootPath));
   if (gzip) stream = stream.pipeThrough(new CompressionStream("gzip"));
-  return stream.pipeTo(file.writable);
+  return stream;
 }
 async function* filterFiles(iter: AsyncGenerator<string>, filter: (filename: string) => string | false) {
   for await (const file of iter) {
@@ -40,6 +42,7 @@ export async function* findFilesByGlob(
   });
   yield* matcher;
 }
+
 /**
  * 读取 glob 文件
  * Requires `allow-read` permission
