@@ -1,5 +1,6 @@
 import type { Octokit } from "octokit";
-import type { RestEndpointMethods } from "./type.ts";
+import type { GitHubRequestOption, RestEndpointMethods } from "./type.ts";
+import { GitHubRepo } from "@asn/cicd/github.ts";
 
 export type ArtifactsResponse = Awaited<
   ReturnType<Octokit["rest"]["actions"]["listArtifactsForRepo"]>
@@ -16,12 +17,13 @@ export class Actions {
   async listArtifacts(option?: string | ListArtifactsOption): Promise<ArtifactsResponse> {
     if (typeof option === "string") option = { name: option };
     const { data } = await this.#restApi.actions.listArtifactsForRepo({
-      owner: this.owner,
-      repo: this.repoName,
       per_page: 1,
       page: option?.page,
       name: option?.name,
+
       request: { signal: option?.signal },
+      owner: this.owner,
+      repo: this.repoName,
     });
 
     return data;
@@ -52,9 +54,7 @@ export class Actions {
     };
   }
 }
-export interface GitHubRequestOption {
-  signal?: AbortSignal;
-}
+
 export interface DownloadArtifactOption extends GitHubRequestOption {
   archive_format?: "zip" | string;
 }
@@ -67,4 +67,46 @@ export interface DownloadArtifactResult {
   body: ReadableStream<Uint8Array>;
   size?: number;
   mime?: string;
+}
+
+export interface DownloadArtifactToParam extends DownloadArtifactOption {
+  owner: string;
+  repo: string;
+  artifactId: number;
+  auth?: any;
+
+  /** 下载文件到的位置 */
+  target: string;
+  /** 默认不会覆盖文件，如果为 true，则覆盖， */
+  overwrite?: boolean;
+
+  tip?: boolean;
+}
+/** 下载工件到指定位置 */
+export async function downloadArtifactTo(param: DownloadArtifactToParam) {
+  const { target, tip, overwrite } = param;
+  const actions = new GitHubRepo(param.owner, param.repo, { auth: param.auth }).actions;
+  if (tip) console.log("开始下载");
+  const { body, size } = await actions.downloadArtifact(param.artifactId, param);
+  if (tip) console.log("size: ", size);
+  let stream = body;
+  if (tip) {
+    let last = Date.now();
+    let current = 0;
+    stream = stream.pipeThrough(
+      new TransformStream({
+        transform(chunk, ctrl) {
+          ctrl.enqueue(chunk);
+          current += chunk.byteLength;
+          if (Date.now() - last > 5 * 1000) {
+            const present = size ? ((current / size) * 100).toFixed(2) + "%" : "--%";
+            console.log((current / 1024).toFixed(2) + "KB", present);
+            last = Date.now();
+          }
+        },
+      }),
+    );
+  }
+  await Deno.writeFile(target, stream, { create: true, createNew: !overwrite });
+  if (tip) console.log("下载完成");
 }
