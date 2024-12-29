@@ -20,8 +20,8 @@ export function createTarInputStream(rootPath: string): TransformStream<string, 
   };
 }
 
-async function getFileTarInput(filename: string, rootPath: string): Promise<TarStreamInput | undefined> {
-  const f = await Deno.open(path.join(rootPath, filename));
+async function getFileTarInput(relFilePath: string, rootPath: string): Promise<TarStreamInput | undefined> {
+  const f = await Deno.open(path.join(rootPath, relFilePath));
   let info: Deno.FileInfo;
   try {
     info = await f.stat();
@@ -30,12 +30,14 @@ async function getFileTarInput(filename: string, rootPath: string): Promise<TarS
     throw error;
   }
 
-  let tarFilename = path.relative(rootPath, filename);
+  let tarFilename = relFilePath;
   if (path.SEPARATOR === "\\") tarFilename = tarFilename.replaceAll("\\", "/");
+  const binMode = info.mode ?? 0b111_111_111;
+  const mode = (binMode >> 6 & 0b111) * 100 + (binMode >> 3 & 0b111) * 10 + (binMode & 0b111);
   const option: TarStreamOptions = {
-    gid: info.gid ? info.gid : 0,
-    uid: info.uid ? info.uid : 0,
-    mode: info.mode ? info.mode : 700,
+    gid: info.gid ? parseInt(info.gid.toString(8)) : 0,
+    uid: info.uid ? parseInt(info.uid.toString(8)) : 0,
+    mode: mode,
     mtime: Math.floor((info.mtime ?? new Date()).getTime() / 1000),
   };
   if (info.isFile || info.isSymlink) {
