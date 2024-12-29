@@ -3,7 +3,7 @@ import type { RestEndpointMethods } from "./type.ts";
 
 export type ArtifactsResponse = Awaited<
   ReturnType<Octokit["rest"]["actions"]["listArtifactsForRepo"]>
->["data"]["artifacts"][0];
+>["data"];
 
 export class Actions {
   #restApi: RestEndpointMethods;
@@ -11,20 +11,20 @@ export class Actions {
     this.#restApi = restApi;
   }
   /** 获取最新的工件信息 */
-  async listArtifacts(name?: string): Promise<ArtifactsResponse | null>;
-  async listArtifacts(option?: { name?: string; signal?: AbortSignal }): Promise<ArtifactsResponse | null>;
-  async listArtifacts(
-    option?: string | { name?: string; signal?: AbortSignal },
-  ): Promise<ArtifactsResponse | null> {
+  async listArtifacts(name?: string): Promise<ArtifactsResponse>;
+  async listArtifacts(option?: ListArtifactsOption): Promise<ArtifactsResponse>;
+  async listArtifacts(option?: string | ListArtifactsOption): Promise<ArtifactsResponse> {
     if (typeof option === "string") option = { name: option };
     const { data } = await this.#restApi.actions.listArtifactsForRepo({
       owner: this.owner,
       repo: this.repoName,
       per_page: 1,
+      page: option?.page,
       name: option?.name,
       request: { signal: option?.signal },
     });
-    return data.artifacts[0] ?? null;
+
+    return data;
   }
   /**
    * 下载工件
@@ -32,14 +32,14 @@ export class Actions {
    */
   async downloadArtifact(
     artifactId: number,
-    options: { signal?: AbortSignal } = {},
+    options: DownloadArtifactOption = {},
   ): Promise<DownloadArtifactResult> {
     const { owner, repoName } = this;
     const res = await this.#restApi.actions.downloadArtifact({
       artifact_id: artifactId,
       owner,
       repo: repoName,
-      archive_format: "zip",
+      archive_format: options.archive_format ?? "zip",
       request: { parseSuccessResponseBody: false, signal: options.signal },
     });
     const size = res.headers["content-length"];
@@ -51,6 +51,17 @@ export class Actions {
       mime,
     };
   }
+}
+export interface GitHubRequestOption {
+  signal?: AbortSignal;
+}
+export interface DownloadArtifactOption extends GitHubRequestOption {
+  archive_format?: "zip" | string;
+}
+export interface ListArtifactsOption extends GitHubRequestOption {
+  per_page?: number;
+  page?: number;
+  name?: string;
 }
 export interface DownloadArtifactResult {
   body: ReadableStream<Uint8Array>;
